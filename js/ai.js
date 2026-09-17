@@ -15,30 +15,46 @@ export const MODELS = {
   },
 };
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Yields a part's bytes, resuming with a Range request if the connection drops.
+async function* partBytes(url, onChunk) {
+  let offset = 0;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, offset ? { headers: { Range: `bytes=${offset}-` } } : undefined);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (offset && res.status !== 206) throw new Error('server ignored resume request');
+      const reader = res.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        offset += value.byteLength;
+        onChunk(value.byteLength);
+        yield value;
+      }
+    } catch (err) {
+      if (attempt >= 5) throw new Error(`Download failed: ${err.message}. Check your connection and try again.`);
+      await sleep(1000 * (attempt + 1));
+    }
+  }
+}
+
 // Streams all parts in order into the cache, then returns the joined file.
 async function openCachedModel(cache, model, onProgress) {
   const cached = await cache.open(model.cacheName);
   if (cached && cached.size === model.bytes) return cached;
 
   let loaded = 0;
-  let i = 0;
-  let reader = null;
+  const bytes = (async function* () {
+    for (const url of model.parts) {
+      yield* partBytes(url, (n) => { loaded += n; onProgress?.(loaded / model.bytes); });
+    }
+  })();
   const joined = new ReadableStream({
     async pull(controller) {
-      while (true) {
-        if (!reader) {
-          if (i === model.parts.length) { controller.close(); return; }
-          const res = await fetch(model.parts[i++]);
-          if (!res.ok) throw new Error(`Model part ${i} failed to download (HTTP ${res.status})`);
-          reader = res.body.getReader();
-        }
-        const { done, value } = await reader.read();
-        if (done) { reader = null; continue; }
-        loaded += value.byteLength;
-        onProgress?.(loaded / model.bytes);
-        controller.enqueue(value);
-        return;
-      }
+      const { done, value } = await bytes.next();
+      if (done) controller.close(); else controller.enqueue(value);
     },
   });
   await cache.write(model.cacheName, joined, {
