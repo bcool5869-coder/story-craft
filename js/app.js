@@ -56,9 +56,7 @@ function openModelDialog() {
     },
       el('strong', {}, m.label),
       el('span', {}, `${m.size} download, cached after the first time`),
-      el('span', { class: 'muted' }, key === '1b'
-        ? 'Lighter and quicker to download. Fine for lessons 1–6, weaker at rewriting and feedback.'
-        : 'Recommended. Clearly better writing and feedback. Needs about 2 GB of free memory.')));
+      el('span', { class: 'muted' }, 'A small 1B model. Strongest on lessons 1–6; treat its rewrites and feedback as rough ideas.')));
   }
   body.append(el('div', { class: 'progress', hidden: '' }, el('div', { class: 'bar' })), el('p', { class: 'load-msg muted' }));
   if (!dialog.open) dialog.showModal();
@@ -203,7 +201,7 @@ function renderExercise(lesson) {
     ...fields,
     el('div', { class: 'actions' }, runBtn, stopBtn),
     output,
-    el('p', { class: 'muted small' }, 'AI output comes from a small 1–2B model. It makes mistakes. Judge it like a classmate\'s draft.'));
+    el('p', { class: 'muted small' }, 'AI output comes from a small 1B model. It makes mistakes. Judge it like a classmate\'s draft.'));
 }
 
 function route() {

@@ -1,24 +1,56 @@
 // Runs MiniCPM5 in the browser with wllama (llama.cpp compiled to WebAssembly, WebGPU when available).
 import { Wllama } from '../vendor/wllama/index.js';
 
-const HF = 'https://huggingface.co/openbmb';
-
+// Everything is served from this repo (GitHub Pages). GitHub rejects files over 100 MB and this model has a
+// single 164 MB tensor, so llama-gguf-split can't help: the file is cut into plain 90 MB byte parts
+// (`split -b 90M`), re-joined here, and stored once in wllama's browser cache.
 export const MODELS = {
-  '2b': {
-    label: 'MiniCPM5-2B',
-    size: '1.56 GB',
-    urls: [`${HF}/MiniCPM5-2B-GGUF/resolve/main/MiniCPM5-2B-Q4_K_M.gguf`],
-  },
   '1b': {
     label: 'MiniCPM5-1B',
     size: '688 MB',
-    // First URL that exists wins: split chunks committed to this repo, then Hugging Face.
-    urls: [
-      './models/minicpm5-1b/MiniCPM5-1B-Q4_K_M-00001-of-00008.gguf',
-      `${HF}/MiniCPM5-1B-GGUF/resolve/main/MiniCPM5-1B-Q4_K_M.gguf`,
-    ],
+    cacheName: 'story-craft_MiniCPM5-1B-Q4_K_M.gguf',
+    bytes: 688065920,
+    parts: Array.from({ length: 8 }, (_, i) =>
+      new URL(`../models/minicpm5-1b/MiniCPM5-1B-Q4_K_M.gguf.part0${i}`, import.meta.url).href),
   },
 };
+
+// Streams all parts in order into the cache, then returns the joined file.
+async function openCachedModel(cache, model, onProgress) {
+  const cached = await cache.open(model.cacheName);
+  if (cached && cached.size === model.bytes) return cached;
+
+  let loaded = 0;
+  let i = 0;
+  let reader = null;
+  const joined = new ReadableStream({
+    async pull(controller) {
+      while (true) {
+        if (!reader) {
+          if (i === model.parts.length) { controller.close(); return; }
+          const res = await fetch(model.parts[i++]);
+          if (!res.ok) throw new Error(`Model part ${i} failed to download (HTTP ${res.status})`);
+          reader = res.body.getReader();
+        }
+        const { done, value } = await reader.read();
+        if (done) { reader = null; continue; }
+        loaded += value.byteLength;
+        onProgress?.(loaded / model.bytes);
+        controller.enqueue(value);
+        return;
+      }
+    },
+  });
+  await cache.write(model.cacheName, joined, {
+    etag: model.cacheName, originalSize: model.bytes, originalURL: model.parts[0],
+  });
+  const blob = await cache.open(model.cacheName);
+  if (!blob || blob.size !== model.bytes) {
+    await cache.delete(model.cacheName);
+    throw new Error('Model download was incomplete. Please try again.');
+  }
+  return blob;
+}
 
 let wllama = null;
 let loadedKey = null;
@@ -27,28 +59,14 @@ export const isLoaded = () => loadedKey !== null;
 export const loadedModel = () => (loadedKey ? MODELS[loadedKey] : null);
 export const hasWebGPU = () => 'gpu' in navigator;
 
-// Probes every URL except the last, which is used as-is (no HEAD request to the external host).
-async function firstReachable(urls) {
-  for (const url of urls.slice(0, -1)) {
-    try {
-      const res = await fetch(url, { method: 'HEAD' });
-      if (res.ok) return url;
-    } catch { /* try next */ }
-  }
-  return urls[urls.length - 1];
-}
-
 export async function loadModel(key, onProgress) {
   if (loadedKey === key) return;
   if (wllama) await wllama.exit();
   loadedKey = null;
   wllama = new Wllama({ default: new URL('../vendor/wllama/wasm/wllama.wasm', import.meta.url).href });
-  const url = await firstReachable(MODELS[key].urls);
-  await wllama.loadModelFromUrl(url, {
-    n_ctx: 4096,
-    jinja: true,
-    progressCallback: ({ loaded, total }) => onProgress?.(total ? loaded / total : 0),
-  });
+  const blob = await openCachedModel(wllama.cacheManager, MODELS[key], onProgress);
+  onProgress?.(1);
+  await wllama.loadModel([blob], { n_ctx: 4096, jinja: true });
   loadedKey = key;
 }
 
