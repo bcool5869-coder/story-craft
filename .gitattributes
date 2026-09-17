@@ -1,0 +1,4 @@
+# Model parts and wasm are binary: never apply line-ending conversion.
+*.part* binary
+*.wasm binary
+*.gguf binary
