@@ -27,14 +27,15 @@ export const isLoaded = () => loadedKey !== null;
 export const loadedModel = () => (loadedKey ? MODELS[loadedKey] : null);
 export const hasWebGPU = () => 'gpu' in navigator;
 
+// Probes every URL except the last, which is used as-is (no HEAD request to the external host).
 async function firstReachable(urls) {
-  for (const url of urls) {
+  for (const url of urls.slice(0, -1)) {
     try {
       const res = await fetch(url, { method: 'HEAD' });
       if (res.ok) return url;
     } catch { /* try next */ }
   }
-  throw new Error('Model files not reachable. Check your connection.');
+  return urls[urls.length - 1];
 }
 
 export async function loadModel(key, onProgress) {
