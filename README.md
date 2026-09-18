@@ -1,5 +1,7 @@
 # 📖 Story Craft
 
+**Live site: https://bcool5869-coder.github.io/story-craft/**
+
 A free, 8-lesson storytelling course that runs entirely on GitHub Pages. Each lesson ends with an
 exercise and a small AI writing partner, **MiniCPM5-1B**, running **inside the learner's
 browser** via [wllama](https://github.com/ngxson/wllama) (llama.cpp → WebAssembly, WebGPU when available).
