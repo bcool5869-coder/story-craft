@@ -33,7 +33,8 @@ Then open http://localhost:8765.
 [MiniCPM5-1B](https://huggingface.co/openbmb/MiniCPM5-1B-GGUF) Q4_K_M (688 MB, Apache-2.0,
 SHA-256 `81b64d05…deafa`), stored in `models/minicpm5-1b/` as 8 plain byte parts under GitHub's 100 MB file limit.
 `llama-gguf-split` can't be used because one tensor (`output.weight`) is 164 MB. `js/ai.js` streams the parts in
-order, joins them, and saves the file in the browser cache so it downloads only once.
+order, joins them, and saves the file in the browser cache so it downloads only once. A dropped connection is
+retried up to 5 times per part and resumed with a `Range` request, so a slow link doesn't restart the download.
 
 ```bash
 split -b 90M -d -a 2 MiniCPM5-1B-Q4_K_M.gguf models/minicpm5-1b/MiniCPM5-1B-Q4_K_M.gguf.part

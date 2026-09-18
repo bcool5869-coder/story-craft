@@ -20,7 +20,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Yields a part's bytes, resuming with a Range request if the connection drops.
 async function* partBytes(url, onChunk) {
   let offset = 0;
-  for (let attempt = 0; ; attempt++) {
+  let attempt = 0;
+  for (;;) {
+    const offsetAtStart = offset;
     try {
       const res = await fetch(url, offset ? { headers: { Range: `bytes=${offset}-` } } : undefined);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -34,8 +36,10 @@ async function* partBytes(url, onChunk) {
         yield value;
       }
     } catch (err) {
-      if (attempt >= 5) throw new Error(`Download failed: ${err.message}. Check your connection and try again.`);
-      await sleep(1000 * (attempt + 1));
+      // Only give up after several attempts that made no progress at all.
+      attempt = offset > offsetAtStart ? 0 : attempt + 1;
+      if (attempt >= 8) throw new Error(`Download failed: ${err.message}. Check your connection and try again.`);
+      await sleep(1000 * attempt);
     }
   }
 }
